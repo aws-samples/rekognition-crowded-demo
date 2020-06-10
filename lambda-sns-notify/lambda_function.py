@@ -1,7 +1,6 @@
 import json
 import boto3
-
-from data import message
+import os
 
 def connect_to_aws(region, service):
     client = boto3.client(service, region_name = region)
@@ -16,23 +15,31 @@ def publish_to_sns(message, subject, topic_arn):
         Message=message,
         Subject=subject,
     )
+    print(response)
+
 
 def parser_sqs_message(event):
-    dict_event_parsed = {}
+    parsed_dict = {}
     try:
-        body = event["Records"][0]["body"]
-        body = body.replace("'", '"')
-
-        body_json = json.loads(body)
-        return body_json
+        body_json = event
+        records = body_json["Records"][0]["body"]
+        records = records.replace("'", '"')
+        records = json.loads(records)
+        
+        parsed_dict['Bucket'] = records["Bucket"]
+        parsed_dict['Object'] = records["Object"]
+        print(parsed_dict)
+        return parsed_dict
     except Exception as e:
         raise e
 
 
 def lambda_handler(event, context):
-    # TODO implement
-    topic_arn = "arn:aws:sns:us-east-1:066045871446:coronavirus-notification-topic"
-    sqs_message = parser_sqs_message(message)
+    topic_arn = os.getenv("TOPIC_ARN", 
+        "arn:aws:sns:us-east-1:936068047509:satellite_notification_topic")
+    sqs_message = parser_sqs_message(event)
+    print(sqs_message)
+
     message_subject = "Crowd Detected!"
     message_body = f"Crowded detected in Bucket: {sqs_message.get('Bucket')} and Object: {sqs_message.get('Object')}"
 
@@ -44,6 +51,3 @@ def lambda_handler(event, context):
         }
     except Exception as e:
         return f"Error {str(e)}"
-    
-
-lambda_handler(None, None)
