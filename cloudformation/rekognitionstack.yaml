@@ -1,0 +1,174 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Stack to provision complete rekognition
+
+Parameters:
+  StackName:
+    Description: The name of your stack to apply Tags
+    Type: String
+    Default: satellite-stack
+  BucketName:
+    Description: The S3 bucket name
+    Type: String
+    Default: rekognition-s3-satellite
+  BucketLambdaCode:
+    Description: The S3 bucket where you store your lambda code
+    Type: String
+  SnsSubscriptionEmail:
+    Description: The email address that you want to subscribe into sns topic
+    Type: String
+
+# SQS to receive events from Lambda Function
+Resources:
+  sqsConsumerQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: sqs_s3_event
+      Tags:
+        - Key: Stack
+          Value: !Ref StackName
+
+  sqsNotifyQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: sqs_lambda_notify
+      Tags:
+        - Key: Stack
+          Value: !Ref StackName
+
+  s3Bucket:
+    Type: AWS::S3::Bucket
+    DependsOn:
+      - sqsConsumerQueue
+      - sqsQueuePolicy
+    Properties: 
+      AccessControl: Private
+      BucketName: !Ref BucketName
+      NotificationConfiguration:
+        QueueConfigurations:
+          - Event: s3:ObjectCreated:*
+            Queue: !GetAtt sqsConsumerQueue.Arn
+      Tags:
+        - Key: Stack
+          Value: !Ref StackName
+
+  sqsQueuePolicy:
+    Type: AWS::SQS::QueuePolicy
+    DependsOn:
+      - sqsConsumerQueue
+    Properties:
+      Queues:
+        - !Ref sqsConsumerQueue
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: '*'
+            Action:
+              - SQS:SendMessage
+            Resource: !GetAtt sqsConsumerQueue.Arn
+            Condition:
+              ArnLike:
+                # Estatico para nao criar dependencia entre o bucket do S3
+                aws:SourceArn: !Join [ "", ["arn:aws:s3:*:*:", !Ref BucketName ] ]
+
+# Lambda Creation dor detect crowd places in an image
+  LambdaCroudRole:
+    Type: AWS::IAM::Role
+    Properties:
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonRekognitionFullAccess
+        - arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess
+        - arn:aws:iam::aws:policy/AmazonSQSFullAccess
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+          Action:
+          - sts:AssumeRole
+
+  LambdaCrowdDetect:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code:
+        S3Bucket: !Ref BucketLambdaCode
+        S3Key: lambda_code/lambda_package_crowd.zip
+      Handler: lambda_function.lambda_handler
+      Role: !GetAtt LambdaCroudRole.Arn
+      Runtime: python3.7
+      Timeout: 10
+      MemorySize: 512
+      Environment:
+        Variables:
+          SQS_URL: !Ref sqsNotifyQueue
+
+  LambdaCrowdSQSEvent:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      BatchSize: 1
+      Enabled: true
+      EventSourceArn: !GetAtt sqsConsumerQueue.Arn
+      FunctionName: !GetAtt LambdaCrowdDetect.Arn
+
+# Crate SNS topic for notification
+  snsTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      DisplayName: satellite-rekognition-sns
+      Subscription:
+        - Endpoint: !Ref SnsSubscriptionEmail
+          Protocol: email
+      TopicName: satellite-rekognition-sns
+
+
+  # Lambda creation for notify SNS
+  LambdaNotifyRole:
+      Type: AWS::IAM::Role
+      Properties:
+        ManagedPolicyArns:
+          - arn:aws:iam::aws:policy/AmazonSQSFullAccess
+          - arn:aws:iam::aws:policy/AmazonSNSFullAccess
+          - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        AssumeRolePolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+              - lambda.amazonaws.com
+            Action:
+            - sts:AssumeRole
+
+  LambdaNotify:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code:
+        S3Bucket: !Ref BucketLambdaCode
+        S3Key: lambda_code/lambda_package_notify.zip
+      Handler: lambda_function.lambda_handler
+      Role: !GetAtt LambdaNotifyRole.Arn
+      Runtime: python3.7
+      Timeout: 10
+      MemorySize: 512
+      Environment:
+        Variables:
+          TOPIC_ARN: !Ref snsTopic
+
+  LambdaNotifySQSEvent:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      BatchSize: 1
+      Enabled: true
+      EventSourceArn: !GetAtt sqsNotifyQueue.Arn
+      FunctionName: !GetAtt LambdaNotify.Arn
+
+Outputs:
+  QueueURL: 
+    Description: "URL of new Amazon SQS Queue"
+    Value: 
+      Ref: sqsConsumerQueue
+# Add more outputs to the stack
