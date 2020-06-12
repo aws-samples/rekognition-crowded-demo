@@ -88,3 +88,33 @@ The result will be that:
 <p align="center"> 
 <img src="images/satellite-app.png">
 </p>
+
+Let's submit our image that will be analyzed, click in **Submit Image**
+
+Our "Satellite" will send the image to Amazon S3 bucket and it will start the process of analyze our image.
+
+<p align="center"> 
+<img src="images/analyze-image.png">
+</p>
+
+If is a crowded place you will receive an notification in the e-mail that you choose above in the Cloudformation template.
+
+## Clean Up
+
+Erase all objects in our Amazon S3 bucket that was provisioned by Cloudformation
+
+```shell
+aws s3 rm s3://<BUCKET_NAME_THAT_WAS_PROVISIONED_BY_CF> --recursive
+```
+
+Delete Cloudformation stack (It will delete all resources)
+
+```shell
+aws cloudformation delete-stack --stack-name sattelite-rekognition-stack
+```
+
+Delete bucket that we used to store our lambda code.
+
+```shell
+aws s3 rb s3://<MY_BUCKET_NAME> --force
+```
