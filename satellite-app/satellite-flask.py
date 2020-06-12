@@ -2,6 +2,7 @@ from flask import Flask, render_template, jsonify, \
     request, Response, redirect, url_for, session
 import random
 import boto3
+import os
 import subprocess
 
 # Flask configurations
@@ -20,7 +21,7 @@ def send_image():
     print(dict_image_rekognition)
 
     client = boto3.client('s3')
-    bucket_name = "space-enablers-poc"
+    bucket_name = os.getenv("BUCKET_NAME","space-enablers-poc")
     bucket_path = ""
 
     data_path = "static/data"
