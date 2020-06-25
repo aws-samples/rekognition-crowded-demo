@@ -118,3 +118,11 @@ Delete bucket that we used to store our lambda code.
 ```shell
 aws s3 rb s3://<MY_BUCKET_NAME> --force
 ```
+
+## Security
+
+See [CONTRIBUTING](CONTRIBUTING.md#security-issue-notifications) for more information.
+
+## License
+
+This project is licensed under the Apache-2.0 License.
